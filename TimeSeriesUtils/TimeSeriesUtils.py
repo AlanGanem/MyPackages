@@ -603,11 +603,6 @@ def chunk_and_concatenate_dict(train_data_dict, pred_period, look_back_period, i
         
     return X_train, y_train, X_val, y_val
 
-
-def scale_df(df,scaler):
-    df[df.columns] = scaler.fit_transform(df[df.columns])
-    return df[df.columns], scaler
-
 def hash_mapper(df, max_val = 100000):
     merged_data = df
     inv_hashmap = {hash(feature)%max_val: feature for feature in set(merged_data[merged_data.columns[list(merged_data.dtypes == 'object')]].values.flatten())}
@@ -847,3 +842,46 @@ def period_mape(preds_df, freq = 'W',actual_col = 'actual'):
         mape_signal[str(col)] = error_df[col].resample(freq).sum()/error_df['actual'].resample(freq).sum()
     
     return mape_abs
+
+
+class df_scaler:
+    def __init__(self, method):
+        assert method in ['MinMax','Standard']
+        self.method = method
+        
+    def fit_transform(self, df, columns):
+        self.scaled_df = pd.DataFrame()
+        self.df = df
+        self.columns = columns
+        
+        self.min = {columns[i]:df[self.columns[i]].min() for i in range(len(columns))}
+        self.max = {columns[i]:df[self.columns[i]].max() for i in range(len(columns))}
+        self.mean = {columns[i]:df[self.columns[i]].mean() for i in range(len(columns))}
+        self.median = {columns[i]:df[self.columns[i]].median() for i in range(len(columns))}
+        self.std = {columns[i]:df[self.columns[i]].std() for i in range(len(columns))}
+        
+        if self.method == 'MinMax':
+            for column in self.columns:
+                self.scaled_df[[column]] = (self.df[[column]]-self.min[column])/(self.max[column]-self.min[column])
+        elif self.method == 'Standard':
+            for column in self.columns:
+                self.scaled_df[[column]] = (self.df[[column]]-self.median[column])/(self.std[column])
+        return self.scaled_df
+        
+    def inverse_transform(self, df, inv_columns):
+        inv_df = pd.DataFrame()
+        inv_columns = inv_columns
+        if self.method == 'MinMax':
+            for column in inv_columns:
+                inv_df[[column]] = df[[column]]*(self.max[column]-self.min[column])+self.min[column]
+        elif self.method == 'Standard':
+            for column in inv_columns:
+                inv_df[[column]] = df[[column]]*self.std[column]+self.mean[column]
+        return inv_df
+    
+    def zscore(x, window = 'W'):
+        r = x.rolling(window=window)
+        m = r.mean().shift(1)
+        s = r.std(ddof=0).shift(1)
+        z = (x-m)/s
+        return z

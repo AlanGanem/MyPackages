@@ -24,7 +24,8 @@ def path_tree():
                     },
             'Outputs':{
                     'TrainedModels':{}
-                    }
+                    },
+	    'Dependencies':{}
             }
 
 def create_root_folder(root,model_name):

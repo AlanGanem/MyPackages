@@ -826,7 +826,7 @@ def chunk_data_by_date_df_covars(df,pred_period,look_back_period,input_columns, 
                 {'X':X_val,'y':y_val,'future_covars':X_covars_val ,'index':index_val}
             }
 
-def period_mape(preds_df, freq = 'W',actual_col = 'actual'):
+def period_mape(preds_df, freq = 'W',actual_col = 'actual', abs = True):
     f_cols = [i for i in preds_df.columns if i[:2] == 'f_']
     error_df = pd.DataFrame()
     for col in f_cols:
@@ -841,7 +841,7 @@ def period_mape(preds_df, freq = 'W',actual_col = 'actual'):
     for col in f_cols:
         mape_signal[str(col)] = error_df[col].resample(freq).sum()/error_df['actual'].resample(freq).sum()
     
-    return mape_abs
+    return mape_abs if abs == True else mape_signal
 
 
 class df_scaler:
@@ -879,9 +879,9 @@ class df_scaler:
                 inv_df[[column]] = df[[column]]*self.std[column]+self.mean[column]
         return inv_df
     
-    def zscore(x, window = 'W'):
-        r = x.rolling(window=window)
-        m = r.mean().shift(1)
-        s = r.std(ddof=0).shift(1)
-        z = (x-m)/s
-        return z
+def zscore(x, window = 'W'):
+    r = x.rolling(window=window)
+    m = r.mean().shift(1)
+    s = r.std(ddof=0).shift(1)
+    z = (x-m)/s
+    return z

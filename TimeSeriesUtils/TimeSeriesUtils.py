@@ -885,3 +885,18 @@ def zscore(x, window = 'W'):
     s = r.std(ddof=0).shift(1)
     z = (x-m)/s
     return z
+
+def fill_date_gaps(df,freq,fillna_value = None,fillna_method = None , **kwargs):
+    date_min = df.index.min()
+    date_max = df.index.max()
+    full_period = pd.DataFrame(index = pd.date_range(start = date_min, end = date_max, **kwargs))
+    df = pd.concat((full_period,df),axis = 1)
+    df.index.freq = freq
+    if fillna_method and not fillna_value:
+        df.fillna(method = fillna_method)
+    elif not fillna_method and  fillna_value:
+        df.fillna(value = fillna_value)
+    
+    assert df.index.freq == freq
+    return df
+    

@@ -844,30 +844,40 @@ def period_mape(preds_df, freq = 'W',actual_col = 'actual', abs = True):
     return mape_abs if abs == True else mape_signal
 
 
-class df_scaler:
+class df_scaler():
+
     def __init__(self, method):
         assert method in ['MinMax','Standard']
         self.method = method
-        
-    def fit_transform(self, df, columns):
-        self.scaled_df = pd.DataFrame()
-        self.df = df
+        return
+
+    def fit(self, df,columns):
+        df = df.astype(float)
         self.columns = columns
-        
         self.min = {columns[i]:df[self.columns[i]].min() for i in range(len(columns))}
         self.max = {columns[i]:df[self.columns[i]].max() for i in range(len(columns))}
         self.mean = {columns[i]:df[self.columns[i]].mean() for i in range(len(columns))}
         self.median = {columns[i]:df[self.columns[i]].median() for i in range(len(columns))}
         self.std = {columns[i]:df[self.columns[i]].std() for i in range(len(columns))}
-        
+
+        self.no_variation_list = [key for key in self.std if self.std[key] == 0]
+        if len(self.no_variation_list) >0:
+            print('{} columns has variance = 0 and will not be scaled'.format(self.no_variation_list))
+            self.columns = [col for col in self.columns if col not in self.no_variation_list]
+        return
+    
+    def transform(self,df):
+        df = df.astype(float)
+        scaled_df = df
         if self.method == 'MinMax':
             for column in self.columns:
-                self.scaled_df[[column]] = (self.df[[column]]-self.min[column])/(self.max[column]-self.min[column])
+                scaled_df[[column]] = (df[[column]]-self.min[column])/(self.max[column]-self.min[column])
         elif self.method == 'Standard':
             for column in self.columns:
-                self.scaled_df[[column]] = (self.df[[column]]-self.median[column])/(self.std[column])
-        return self.scaled_df
-        
+                scaled_df[[column]] = (df[[column]]-self.median[column])/(self.std[column])
+        return scaled_df
+
+
     def inverse_transform(self, df, inv_columns):
         inv_df = pd.DataFrame()
         inv_columns = inv_columns

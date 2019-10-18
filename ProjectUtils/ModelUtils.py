@@ -20,7 +20,9 @@ def path_tree():
             'Model':{
                     'Architecture':{},
                     'Preprocessing':{},
-                    'TrainedModels':{}
+                    'TrainedModels':{},
+                    'Validation':{},
+                    'Exploration':{}
                     },
             'Outputs':{
                     'TrainedModels':{}

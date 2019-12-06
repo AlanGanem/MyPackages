@@ -11,6 +11,11 @@ import xarray as xnp
 class Seq2SeqTransformer():
 
     def fill_date_gaps(self,df,freq,fillna_value = None,fillna_method = None , **kwargs):
+        '''
+        look_back_period includes the actual date (look_back_period = 1 is the same as today's info and not yesterday's)
+        pred_period does not include today (look_back_period = 1 is the same as tomorrows info)
+        '''
+
         date_min = df.index.min()
         date_max = df.index.max()
         full_period = pd.DataFrame(index = pd.date_range(start = date_min, end = date_max, **kwargs))
@@ -24,15 +29,16 @@ class Seq2SeqTransformer():
         assert df.index.freq == freq
         return df
     
-    def __init__(self,            
-            past_variables,
-            dependent_vars,
-            future_covars,
-            look_back_period,
-            pred_period ,
-            freq = 'D'
-            ):
-        
+    def __init__(
+    	self,            
+        past_variables,
+        dependent_vars,
+        future_covars,
+        look_back_period,
+        pred_period ,
+        freq = 'D'
+        ):
+    
         self.past_variables = past_variables 
         self.dependent_vars = dependent_vars
         self.future_covars = future_covars
@@ -40,10 +46,43 @@ class Seq2SeqTransformer():
         self.pred_period = pred_period
         self.freq = freq
         self.unit_period = 1
+        self.split_params = False
         
         return
     
-    def fit(self, df):
+    def fit(
+            self,
+            df,
+            ):
+            
+        df = self.fill_date_gaps(df, self.freq)
+        extd_freq = df.index.freq
+        assert self.freq == df.index.freq
+        
+        lbpargs = {str(extd_freq)[1:-1].lower()+'s':self.look_back_period} 
+        ppargs = {str(extd_freq)[1:-1].lower()+'s':self.pred_period}
+        p1args = {str(extd_freq)[1:-1].lower()+'s':1}
+    
+        self.unit_period_dt = pd.DateOffset(**p1args)
+        self.look_back_period_dt= pd.DateOffset(**lbpargs)
+        self.pred_period_dt = pd.DateOffset(**ppargs)
+        
+        self.min_past_date = min(df.index)+self.look_back_period_dt - self.unit_period_dt    
+        self.max_future_date = max(df.index) - self.pred_period_dt - self.unit_period_dt
+
+        return self
+
+    def transform(
+    	self,
+    	df,
+    	as_array_dict = False,
+    	train_test_split = False,
+    	train_split_start = None,
+    	train_split_end = None,
+    	test_split_start = None,
+    	test_split_end = None,
+    	**fillnaargs
+    	):
         
         df = self.fill_date_gaps(df, self.freq)
         extd_freq = df.index.freq
@@ -72,7 +111,7 @@ class Seq2SeqTransformer():
         
             date_dict_covars[date]= df.loc[date+self.unit_period_dt:pd.to_datetime(date)+self.pred_period_dt, self.future_covars].reset_index(drop = True)
             if date_dict_covars[date].shape[0] != self.pred_period:
-                    date_dict_covars.pop(pd.to_datetime(date),None) 
+                date_dict_covars.pop(pd.to_datetime(date),None) 
 
         
         self.min_past_date = min(list(date_dict_X))
@@ -80,64 +119,126 @@ class Seq2SeqTransformer():
         self.max_past_date = max(list(date_dict_X))
         self.min_future_date = min(list(date_dict_y))
         
-        self.fitted_dict = {
-                'X_dict':pd.concat(date_dict_X),
-                'y_dict':pd.concat(date_dict_y),
-                'covars_dict':pd.concat(date_dict_covars)
+        fitted_dict = {
+                'X_dict':pd.concat(date_dict_X).fillna(**fillnaargs),
+                'y_dict':pd.concat(date_dict_y).fillna(**fillnaargs),
+                'covars_dict':pd.concat(date_dict_covars).fillna(**fillnaargs),
                 }
-        
+
         self.train_split_start = None
         self.train_split_end = None
         self.test_split_start = None
         self.test_split_end = None
         
-        return
-    
+        if train_test_split:
+        	self.train_test_split(
+				train_split_start = train_split_start,
+		    	train_split_end = train_split_end,
+		    	test_split_start = test_split_start,
+		    	test_split_end = test_split_end
+        		)
+        	fitted_dict =self.split_transform(fitted_dict)
+
+        if as_array_dict:
+            return self.transform_array(fitted_dict)
+        else:
+            return fitted_dict
+
     def create_multiindex(self):
-        return
+        return    
+
+    def transform_array(
+    	self,
+    	fitted_dict
+    	):    
+
+        transformed_dict = {}
+        date_dict = {}
+        for key,df in fitted_dict.items():
+            grouper = df.groupby(level = 0)
+            df_list = []
+            date_list = []
+            for date, df in grouper:
+                df_list.append(df.values)
+                date_list.append(date)
+            transformed_dict[key] = np.array(df_list)
+            date_dict[key] = date_list
+        self.date_dict = date_dict
+
+        return transformed_dict
+
+    def split_transform(
+        self,
+        df,
+        train_split_start,
+        train_split_end,
+        test_split_start,
+        test_split_end,
+        **fillnaargs
+        ):
     
-    def train_test_split(           
-            self,
-            train_split_start,
-            train_split_end,
-            test_split_start,
-            test_split_end           
-            ):
+	    self.train_test_split(
+	        train_split_start = train_split_start,
+	        train_split_end = train_split_end,
+	        test_split_start = test_split_start,
+	        test_split_end = test_split_end,
+	        )
+	    
+	    tr_s = pd.to_datetime(self.train_split_start)
+	    tr_e = pd.to_datetime(self.train_split_end)
+	    ts_s = pd.to_datetime(self.test_split_start)
+	    ts_e = pd.to_datetime(self.test_split_end) 
+		    
+	    fitted_dict = self.transform(df,**fillnaargs)
+		    
+	    split_dict = {
+	        'X_train': fitted_dict['X_dict'].loc[tr_s:tr_e],
+	        'X_covars_train': fitted_dict['covars_dict'].loc[tr_s:tr_e],
+	        'y_train': fitted_dict['y_dict'].loc[tr_s:tr_e],
+	        'X_test': fitted_dict['X_dict'].loc[ts_s:ts_e],
+	        'X_covars_test': fitted_dict['covars_dict'].loc[ts_s:ts_e],
+	        'y_test': fitted_dict['y_dict'].loc[ts_s:ts_e]                 
+		            }
+	    
+	    return split_dict
+
+    def split_transform_array(
+        self,
+        df,
+        train_split_start,
+        train_split_end,
+        test_split_start,
+        test_split_end,
+        **fillnaargs
+        ):
         
+        split_dict = self.split_transform(
+        	df = df,
+			train_split_start = train_split_start, 
+			train_split_end = train_split_end,
+			test_split_start = test_split_start,
+			test_split_end = test_split_end,
+			**fillnaargs
+        )
+
+        transformed_dict = self.transform_array(split_dict)
+        return transformed_dict
+
+    def train_test_split(
+        self,
+        train_split_start,
+        train_split_end,
+        test_split_start,
+        test_split_end,
+        ):
+
         self.train_split_start = pd.to_datetime(train_split_start) 
         self.train_split_end = pd.to_datetime(train_split_end)
         self.test_split_start = pd.to_datetime(test_split_start)
         self.test_split_end = pd.to_datetime(test_split_end)
-        
         assert self.train_split_start >= self.min_past_date
         assert self.test_split_end <= self.max_future_date
         assert self.train_split_end < self.test_split_start
-        
+	    
+        self.split_params = True
         return
-    
-    def transform(self):    
-        
-        tr_s = self.train_split_start
-        tr_e = self.train_split_end
-        ts_s = self.test_split_start
-        ts_e = self.test_split_end 
-        
-        
-        split_dict = {
-                'X_train': self.fitted_dict['X_dict'].loc[tr_s:tr_e],
-                'X_covars_train': self.fitted_dict['covars_dict'].loc[tr_s:tr_e],
-                'y_train': self.fitted_dict['y_dict'].loc[tr_s:tr_e],
-                'X_test': self.fitted_dict['X_dict'].loc[ts_s:ts_e],
-                'X_covars_test': self.fitted_dict['covars_dict'].loc[ts_s:ts_e],
-                'y_test': self.fitted_dict['y_dict'].loc[ts_s:ts_e]                 
-                }
-        
-        transformed_dict = {}
-        for key,df in split_dict.items():
-            grouper = df.groupby(level = 0)
-            teste_list = []
-            for group , df in grouper:
-                teste_list.append(df.values)
-            transformed_dict[key] = np.array(teste_list)    
-        
-        return transformed_dict

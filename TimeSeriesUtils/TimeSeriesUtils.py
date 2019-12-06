@@ -851,7 +851,8 @@ class df_scaler():
         self.method = method
         return
 
-    def fit(self, df,columns):
+    def fit(self, df,columns, percentile_1 = 0.25, percentile_2 = 0.75):
+        assert 0<percentile_1<percentile_2<1
         df = df.astype(float)
         self.columns = columns
         self.min = {columns[i]:df[self.columns[i]].min() for i in range(len(columns))}
@@ -859,6 +860,9 @@ class df_scaler():
         self.mean = {columns[i]:df[self.columns[i]].mean() for i in range(len(columns))}
         self.median = {columns[i]:df[self.columns[i]].median() for i in range(len(columns))}
         self.std = {columns[i]:df[self.columns[i]].std() for i in range(len(columns))}
+        self.q1 = {columns[i]:df[self.columns[i]].quantile(percentile_1) for i in range(len(columns))}
+        self.q2 = {columns[i]:df[self.columns[i]].quantile(percentile_2) for i in range(len(columns))}
+        
 
         self.no_variation_list = [key for key in self.std if self.std[key] == 0]
         if len(self.no_variation_list) >0:
@@ -869,12 +873,15 @@ class df_scaler():
     def transform(self,df):
         df = df.astype(float)
         scaled_df = df
-        if self.method == 'MinMax':
+        if self.method == 'MinMaxScaler':
             for column in self.columns:
                 scaled_df[[column]] = (df[[column]]-self.min[column])/(self.max[column]-self.min[column])
-        elif self.method == 'Standard':
+        elif self.method == 'StandardScaler':
             for column in self.columns:
                 scaled_df[[column]] = (df[[column]]-self.median[column])/(self.std[column])
+        elif self.method = 'RobustScaler':
+        	for column in self.columns:
+        		scaled_df[[column]] = 
         return scaled_df
 
 

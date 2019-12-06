@@ -1,6 +1,6 @@
 import pandas as pd
 
-class df_scaler():
+class DfScaler():
 
     def __init__(self, method):
         assert method in ['MinMaxScaler','StandardScaler','RobustScaler']

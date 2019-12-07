@@ -2,22 +2,32 @@ import pandas as pd
 
 class DfScaler():
 
-    def __init__(self, method):
-        assert method in ['MinMaxScaler','StandardScaler','RobustScaler']
-        self.method = method
+    def __init__(self, method = None, columns = None ,method_columns = None):
+        
+        self.avalible_scalers = ['MinMaxScaler','StandardScaler','RobustScaler']
+        
+        if isinstance(method_columns,dict):    
+            self.method_columns = method_columns
+        else:
+            self.method_columns = {method: columns}
+        
+        self.columns = sum((lst for lst in [values for key,values in self.method_columns.items()]),[])
+        self.method = [key for key in self.method_columns.keys()]
+
         return
 
-    def fit(self, df,columns, percentile_1 = 0.25, percentile_3 = 0.75):
+    def fit(self, df, percentile_1 = 0.25, percentile_3 = 0.75):
+        
         assert 0<percentile_1<percentile_3<1
+        
         df = df.astype(float)
-        self.columns = columns
-        self.min = {columns[i]:df[self.columns[i]].min() for i in range(len(columns))}
-        self.max = {columns[i]:df[self.columns[i]].max() for i in range(len(columns))}
-        self.mean = {columns[i]:df[self.columns[i]].mean() for i in range(len(columns))}
-        self.median = {columns[i]:df[self.columns[i]].median() for i in range(len(columns))}
-        self.std = {columns[i]:df[self.columns[i]].std() for i in range(len(columns))}
-        self.q1 = {columns[i]:df[self.columns[i]].quantile(percentile_1) for i in range(len(columns))}
-        self.q3 = {columns[i]:df[self.columns[i]].quantile(percentile_3) for i in range(len(columns))}
+        self.min = {self.columns[i]:df[self.columns[i]].min() for i in range(len(self.columns))}
+        self.max = {self.columns[i]:df[self.columns[i]].max() for i in range(len(self.columns))}
+        self.mean = {self.columns[i]:df[self.columns[i]].mean() for i in range(len(self.columns))}
+        self.median = {self.columns[i]:df[self.columns[i]].median() for i in range(len(self.columns))}
+        self.std = {self.columns[i]:df[self.columns[i]].std() for i in range(len(self.columns))}
+        self.q1 = {self.columns[i]:df[self.columns[i]].quantile(percentile_1) for i in range(len(self.columns))}
+        self.q3 = {self.columns[i]:df[self.columns[i]].quantile(percentile_3) for i in range(len(self.columns))}
         
 
         self.no_variation_list = [key for key in self.std if self.std[key] == 0]
@@ -30,35 +40,38 @@ class DfScaler():
         df = df.astype(float)
         scaled_df = df
         
-        if self.method == 'MinMaxScaler':
-            for column in self.columns:
-                scaled_df[[column]] = (df[[column]]-self.min[column])/(self.max[column]-self.min[column])
-        
-        elif self.method == 'StandardScaler':
-            for column in self.columns:
-                scaled_df[[column]] = (df[[column]]-self.median[column])/(self.std[column])
-        
-        elif self.method == 'RobustScaler':
-        	for column in self.columns:
-        		scaled_df[[column]] = ((df[[column]]-self.q1[column])/(self.q3[column]-self.q1[column]))
-        
-        return scaled_df
+        for method in self.method_columns.keys():
+            
+            if method == 'MinMaxScaler':
+                for column in self.method_columns[method]:
+                    scaled_df[[column]] = (df[[column]]-self.min[column])/(self.max[column]-self.min[column])
+            
+            elif method == 'StandardScaler':
+                for column in self.method_columns[method]:
+                    scaled_df[[column]] = (df[[column]]-self.median[column])/(self.std[column])
+            
+            elif method == 'RobustScaler':
+            	for column in self.method_columns[method]:
+            		scaled_df[[column]] = ((df[[column]]-self.q1[column])/(self.q3[column]-self.q1[column]))
+            
+            return scaled_df
 
 
-    def inverse_transform(self, df, inv_columns):
+    def inverse_transform(self, df):
         inv_df = pd.DataFrame()
-        inv_columns = inv_columns
         
-        if self.method == 'MinMaxScaler':
-            for column in inv_columns:
-                inv_df[[column]] = df[[column]]*(self.max[column]-self.min[column])+self.min[column]
+        for method in self.method_columns.keys():
         
-        elif self.method == 'StandardScaler':
-            for column in inv_columns:
-                inv_df[[column]] = df[[column]]*self.std[column]+self.mean[column]
-        
-        if self.method == 'RobustScaler':
-            for column in inv_columns:
-                inv_df[[column]] = df[[column]]*(self.q3[column]-self.q1[column])+self.q1[column]
-        
-        return inv_df
+            if method == 'MinMaxScaler':
+                for column in self.method_columns[method]:
+                    inv_df[[column]] = df[[column]]*(self.max[column]-self.min[column])+self.min[column]
+            
+            elif method == 'StandardScaler':
+                for column in self.method_columns[method]:
+                    inv_df[[column]] = df[[column]]*self.std[column]+self.mean[column]
+            
+            if method == 'RobustScaler':
+                for column in self.method_columns[method]:
+                    inv_df[[column]] = df[[column]]*(self.q3[column]-self.q1[column])+self.q1[column]
+            
+            return inv_df

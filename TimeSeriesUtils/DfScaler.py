@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Dec  6 22:34:20 2019
+
+@author: User Ambev
+"""
+
 import pandas as pd
 
 class DfScaler():
@@ -38,40 +45,80 @@ class DfScaler():
     
     def transform(self,df):
         df = df.astype(float)
-        scaled_df = df
+        scaled_df = df.copy()
         
         for method in self.method_columns.keys():
             
             if method == 'MinMaxScaler':
                 for column in self.method_columns[method]:
-                    scaled_df[[column]] = (df[[column]]-self.min[column])/(self.max[column]-self.min[column])
+                    try:
+                        scaled_df[[column]] = (df[[column]]-self.min[column])/(self.max[column]-self.min[column])
+                    except KeyError:
+                        print('column {} from fitted object not in frame'.format(column))
             
             elif method == 'StandardScaler':
                 for column in self.method_columns[method]:
-                    scaled_df[[column]] = (df[[column]]-self.median[column])/(self.std[column])
+                    try:
+                        scaled_df[[column]] = (df[[column]]-self.median[column])/(self.std[column])
+                    except KeyError:
+                        print('column {} from fitted object not in frame'.format(column))
             
             elif method == 'RobustScaler':
-            	for column in self.method_columns[method]:
-            		scaled_df[[column]] = ((df[[column]]-self.q1[column])/(self.q3[column]-self.q1[column]))
+                for column in self.method_columns[method]:
+                    try:
+                        scaled_df[[column]] = ((df[[column]]-self.q1[column])/(self.q3[column]-self.q1[column]))
+                    except KeyError:
+                        print('column {} from fitted object not in frame'.format(column))
             
             return scaled_df
 
 
     def inverse_transform(self, df):
-        inv_df = pd.DataFrame()
+        inv_df = df.copy()
         
         for method in self.method_columns.keys():
         
             if method == 'MinMaxScaler':
                 for column in self.method_columns[method]:
-                    inv_df[[column]] = df[[column]]*(self.max[column]-self.min[column])+self.min[column]
+                    try:
+                        inv_df[[column]] = df[[column]]*(self.max[column]-self.min[column])+self.min[column]
+                    except KeyError:
+                        print('column {} from fitted object not in frame'.format(column))
             
             elif method == 'StandardScaler':
                 for column in self.method_columns[method]:
-                    inv_df[[column]] = df[[column]]*self.std[column]+self.mean[column]
+                    try:
+                        inv_df[[column]] = df[[column]]*self.std[column]+self.mean[column]
+                    except KeyError:
+                        print('column {} from fitted object not in frame'.format(column))
+
             
             if method == 'RobustScaler':
                 for column in self.method_columns[method]:
-                    inv_df[[column]] = df[[column]]*(self.q3[column]-self.q1[column])+self.q1[column]
+                    try:
+                        inv_df[[column]] = df[[column]]*(self.q3[column]-self.q1[column])+self.q1[column]
+                        print(inv_df[[column]])
+                    except KeyError:
+                        print('column {} from fitted object not in frame'.format(column))
             
-            return inv_df
+        return inv_df
+
+    def custom_transform(self, df, columns):
+
+        '''
+        apply transform to custom dataframe,
+        columns specify the column to column relationship (in order to find the proper statistics)
+        
+        '''
+        inv_columns = {value:key for key,value in columns.items()}
+        return self.transform(df.rename(columns = columns)).rename(columns = inv_columns)
+
+    def custom_inverse_transform(self, df, columns):
+
+        '''
+        apply transform to custom dataframe,
+        columns specify the column to column relationship (in order to find the proper statistics)
+        
+        '''
+        inv_columns = {value:key for key,value in columns.items()}
+        return self.inverse_transform(df.rename(columns = columns)).rename(columns = inv_columns)

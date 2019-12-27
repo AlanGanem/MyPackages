@@ -7,8 +7,16 @@ Created on Mon Oct 14 19:14:26 2019
 import numpy as np
 import pandas as pd
 import xarray as xnp
+import joblib
 
 class Seq2SeqTransformer():
+
+    @classmethod
+    def load(cls, loading_path, **joblibargs):        
+        return joblib.load(loading_path, **joblibargs)
+    
+    def save(self, saving_path, **joblibargs):        
+        joblib.dump(self, saving_path, **joblibargs)
 
     def fill_date_gaps(self,df,freq,fillna_value = None,fillna_method = None , **kwargs):
         '''

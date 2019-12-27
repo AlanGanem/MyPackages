@@ -6,8 +6,16 @@ Created on Fri Dec  6 22:34:20 2019
 """
 
 import pandas as pd
+import joblib
 
 class DfScaler():
+
+    @classmethod
+    def load(cls, loading_path, **joblibargs):
+        return joblib.load(loading_path, **joblibargs)
+    
+    def save(self, saving_path, **joblibargs):
+        joblib.dump(self, saving_path, **joblibargs)
 
     def __init__(self, method = None, columns = None ,method_columns = None):
         

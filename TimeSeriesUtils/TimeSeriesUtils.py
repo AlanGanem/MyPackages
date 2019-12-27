@@ -632,24 +632,6 @@ def n_of_week_days(df, prefix = 'n_'):
     assert len(list(df.index)) == len(index_before)
     return df
 
-def pred_df(y_true,y_pred, index ,fix_dim = -1, prefix = 'f_'):
-    assert (len(y_true.shape),len(y_pred.shape)) == (2,2)
-    error_dict = {}
-    for forecast in range(y_pred.shape[fix_dim]):
-        error_dict[forecast] = pd.DataFrame(y_pred.take(axis = fix_dim, indices = forecast).flatten(),index = index.take(axis = fix_dim, indices = forecast), columns = [forecast])
-    #col_names = [str(prefix)+ str(forecast) for forecast in error_dict.keys()]
-    i = 0
-    for key,df in error_dict.items():
-        df.columns = [str(prefix)+str(key)]
-        if i ==0:
-            error_df = df
-            actual_index = df.index
-        else:
-            error_df = pd.concat([error_df,df], axis = 1)
-        i+=1
-    error_df = pd.concat([error_df, pd.DataFrame(y_true.take(axis = fix_dim, indices = 0), index = actual_index, columns = ['actual'])],axis = 1)
-    return error_df
-
 def data_dict_transformer(train_data_dict, key, pred_period, look_back_period, encoder_inputs, decoder_inputs, **kwargs):
     
     X_train, y_train, X_val, y_val = chunk_and_concatenate_dict({key:train_data_dict[key].assign(date = train_data_dict[key].index)},pred_period,look_back_period,encoder_inputs,['date']+decoder_inputs,**kwargs)
@@ -664,41 +646,6 @@ def data_dict_transformer(train_data_dict, key, pred_period, look_back_period, e
 
 def get_date_loc(df, days = range(40),months = range(40),years = range(9999999),daysofweek = range(8)):
     return df.loc[(df.index.day.isin(days))&(df.index.month.isin(months))&(df.index.year.isin(years))&(df.index.dayofweek.isin(daysofweek))]
-
-def column_to_categorical(df ,columns,column_names =None, sep = '_'):
-    concat_df = 0
-    split_columns = [i.split(sep) for i in columns]
-    levels_dict={index:[] for index,_ in enumerate(split_columns)}
-    for col_name in split_columns:
-        for index,value in enumerate(col_name):
-            df[index] = 0
-            if value not in levels_dict[index]:
-                levels_dict[index].append(value)
-                
-    levels_dict = {key:value for key,value in levels_dict.items() if value != []}
-    combinations = list(itertools.product(*list(levels_dict.values())))
-    i=0
-    for comb in combinations:
-        combination = sep.join(comb)
-        if combination in columns:    
-            for level, value in enumerate(comb): 
-                df[level] = value
-            df['Value'] = df[combination]
-            
-            if i == 0:
-                concat_df = df.drop(columns = columns).copy()
-                i+=1
-            else:
-                concat_df = pd.concat([concat_df,df.drop(columns = columns)],axis = 0)
-    
-    if column_names:
-        assert len(column_names) == len(levels_dict.keys())
-        names_dict = {i:name for i,name in enumerate(column_names)}
-        concat_df = concat_df.rename(columns = names_dict)
-    
-    index_name = concat_df.index.name
-    
-    return concat_df
 
 def remove_outliers(df,std_threshold = 3,bilateral = True,columns = None):
     columns = df.columns if not columns else columns
@@ -825,76 +772,6 @@ def chunk_data_by_date_df_covars(df,pred_period,look_back_period,input_columns, 
             'val':
                 {'X':X_val,'y':y_val,'future_covars':X_covars_val ,'index':index_val}
             }
-
-def period_mape(preds_df, freq = 'W',actual_col = 'actual', abs = True):
-    f_cols = [i for i in preds_df.columns if i[:2] == 'f_']
-    error_df = pd.DataFrame()
-    for col in f_cols:
-        error_df[str(col)] = (preds_df[col]-preds_df[actual_col])
-    error_df['actual'] = preds_df[actual_col]
-    
-    mape_abs = pd.DataFrame()
-    for col in f_cols:
-        mape_abs[str(col)] = error_df[col].abs().resample(freq).sum()/error_df['actual'].abs().resample(freq).sum()
-        
-    mape_signal = pd.DataFrame()
-    for col in f_cols:
-        mape_signal[str(col)] = error_df[col].resample(freq).sum()/error_df['actual'].resample(freq).sum()
-    
-    return mape_abs if abs == True else mape_signal
-
-
-class df_scaler():
-
-    def __init__(self, method):
-        assert method in ['MinMax','Standard']
-        self.method = method
-        return
-
-    def fit(self, df,columns, percentile_1 = 0.25, percentile_2 = 0.75):
-        assert 0<percentile_1<percentile_2<1
-        df = df.astype(float)
-        self.columns = columns
-        self.min = {columns[i]:df[self.columns[i]].min() for i in range(len(columns))}
-        self.max = {columns[i]:df[self.columns[i]].max() for i in range(len(columns))}
-        self.mean = {columns[i]:df[self.columns[i]].mean() for i in range(len(columns))}
-        self.median = {columns[i]:df[self.columns[i]].median() for i in range(len(columns))}
-        self.std = {columns[i]:df[self.columns[i]].std() for i in range(len(columns))}
-        self.q1 = {columns[i]:df[self.columns[i]].quantile(percentile_1) for i in range(len(columns))}
-        self.q2 = {columns[i]:df[self.columns[i]].quantile(percentile_2) for i in range(len(columns))}
-        
-
-        self.no_variation_list = [key for key in self.std if self.std[key] == 0]
-        if len(self.no_variation_list) >0:
-            print('{} columns has variance = 0 and will not be scaled'.format(self.no_variation_list))
-            self.columns = [col for col in self.columns if col not in self.no_variation_list]
-        return
-    
-    def transform(self,df):
-        df = df.astype(float)
-        scaled_df = df
-        if self.method == 'MinMaxScaler':
-            for column in self.columns:
-                scaled_df[[column]] = (df[[column]]-self.min[column])/(self.max[column]-self.min[column])
-        elif self.method == 'StandardScaler':
-            for column in self.columns:
-                scaled_df[[column]] = (df[[column]]-self.median[column])/(self.std[column])
-        elif self.method = 'RobustScaler':
-        	for column in self.columns:
-        		scaled_df[[column]] = 
-        return scaled_df
-
-
-    def inverse_transform(self, df, inv_columns):
-        inv_df = pd.DataFrame()
-        inv_columns = inv_columns
-        if self.method == 'MinMax':
-            for column in inv_columns:
-                inv_df[[column]] = df[[column]]*(self.max[column]-self.min[column])+self.min[column]
-        elif self.method == 'Standard':
-            for column in inv_columns:
-                inv_df[[column]] = df[[column]]*self.std[column]+self.mean[column]
-        return inv_df
     
 def zscore(x, window = 'W'):
     r = x.rolling(window=window)

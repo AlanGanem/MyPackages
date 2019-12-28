@@ -1,6 +1,7 @@
 import joblib
 from abc import ABC, abstractmethod
 import warnings
+import copy
 
 class BaseEstimator(ABC):
     
@@ -41,10 +42,14 @@ class BaseEstimator(ABC):
 
         return
 
-    def check_flow(self, inputs):
+    def check_input(self, inputs):
         
         assert isinstance(inputs, dict)        
-    
+        
+        if not isinstance(self.inputs, list):
+            print('must assign the allowed inputs in constructor (list). not checking performed.')
+            return        
+
         if self.input_check_mode == 'filter':
             inputs = {input_name:value in input_name in self.inputs for input_name,value in inputs.items()}
             return inputs
@@ -64,7 +69,11 @@ class BaseEstimator(ABC):
     def check_output(self, outputs):
         
         assert isinstance(outputs, dict)        
-    
+        
+        if not isinstance(self.outputs, list):
+            print('must assign the allowed outputs in constructor (list). not checking performed.')
+            return
+
         if self.output_check_mode == 'filter':
             outputs = {output_name:value in output_name in self.outputs for output_name,value in output.items()}
             return outputs        
@@ -102,15 +111,21 @@ class Capsula():
         transform_only = False,
         estimator_fitargs = {},
         estimator_transformargs = {},
+        allowed_inputs = None,
+        allowed_outputs = None,
+        input_check_mode = 'filter',
+        output_check_mode = 'filter',
         **dismissed
         ):
         
+        if callable(estimator):
+            transform_only = True
+            transform_method = '__call__'
         if not name:
             name = str(estimator)
         
         local_vars = locals()
-        
-        for var_name in local_vars:
+        for var_name in local_vars:            
             setattr(self, var_name,local_vars[var_name])
         
         return
@@ -124,8 +139,15 @@ class Capsula():
         ):
         
         if self['transform_only'] == True:
-            print('tranform_only method. fit method will not be performed')
+            print('{} is a tranform_only estimator. fit method will not be performed'.format(self['name']))
             return
+
+        if self.allowed_inputs:
+            self.check(
+                allowed = self.allowed_inputs,
+                check_mode = self.input_check_mode,
+                inputs = inputs
+                )
 
         getattr(
             self['estimator'],
@@ -151,9 +173,16 @@ class Capsula():
         ):
 
         if self['fit_only'] == True:
-            print('fit_only method. transform method will not be performed')
+            print('{} is a fit_only estimator. transform method will not be performed'.format(self['name']))
             return
 
+        if self.allowed_inputs:
+            inputs = self.check(
+                allowed = self.allowed_inputs,
+                check_mode = self.input_check_mode,
+                inputs = inputs
+                )
+        
         output = getattr(
             self['estimator'],
             self['transform_method']
@@ -162,32 +191,60 @@ class Capsula():
                 **self['estimator_transformargs']
             )
 
+        if self.allowed_outputs:
+            output = self.check(
+                allowed = self.allowed_outputs,
+                check_mode = self.output_check_mode,
+                inputs = output
+                )
+
         return output
 
-
-    def check_flow(allowed, check_mode, inputs):
+    def check(self, allowed, check_mode, inputs):
         
-        assert isinstance(inputs, dict)        
+        checked_input = check_flow(
+            allowed = allowed,
+            check_mode = check_mode,
+            inputs = inputs
+            )
+        if checked_input:
+            return checked_input
+
+
+def check_flow(allowed, check_mode, inputs):
     
-        if check_mode == 'filter':
-            inputs = {input_name:value in input_name in allowed for input_name,value in inputs.items()}
-            return inputs
-        
-        elif check_mode == 'raise':
-            if not set(allowed) == set(inputs):
-                print('input json must contain exactly {} keys'.format(allowed))
-                raise AssertionError
-        
-        elif check_mode == 'ignore':
-            return inputs
-        
-        elif check_mode == 'warn'
-            intersec = set(allowed).intersection(set(inputs))
-            missing = intersec - set(allowed)
-            extra = intersec - set(inputs)
-            
-            warnings.warn("not allowed items passed: {}")
+    if not isinstance(allowed, list):
+        print('Allowed keys must be passed as a list. No checking performed.')
+        return inputs
 
+    if not isinstance(inputs, dict):
+        print('inputs must be dict. No checking performed.')
+        return inputs
+
+
+    intersec = set(allowed).intersection(set(inputs))
+    missing = set(allowed) - intersec
+    extra = set(inputs) - intersec
+
+    if check_mode == 'filter':        
+        if (not missing) and (not (set(allowed) == set(inputs))):            
+            inputs = {input_name:value in input_name in allowed for input_name,value in inputs.items()}
+            return inputs        
+        elif set(allowed) == set(inputs):
+            return inputs
         else:
-            print('check_mode should be one of ["filter","raise","ignore", "warn"]')
-            raise ValueError
+            raise AssertionError('in order to filter, input json must contain {}\n{} is missing'.format(set(allowed), missing))
+    
+    elif check_mode == 'raise':
+        if not set(allowed) == set(inputs):
+            raise AssertionError('input json must contain exactly {} keys'.format(allowed))
+    
+    elif check_mode == 'ignore':
+        return inputs
+    
+    elif check_mode == 'warn':
+        warnings.warn("not allowed items passed: {} \nmissing items: {}".format(str(extra),str(missing)))
+        return inputs
+
+    else:        
+        raise ValueError('check_mode should be one of ["filter","raise","ignore", "warn"]')

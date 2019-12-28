@@ -2,6 +2,7 @@ import joblib
 from abc import ABC, abstractmethod
 import warnings
 import copy
+import inspect
 
 class BaseEstimator(ABC):
     
@@ -111,19 +112,28 @@ class Capsula():
         transform_only = False,
         estimator_fitargs = {},
         estimator_transformargs = {},
-        allowed_inputs = None,
+        required_inputs = None,
         allowed_outputs = None,
-        input_check_mode = 'filter',
-        output_check_mode = 'filter',
+        input_check_mode = 'warn',
+        output_check_mode = 'warn',
+        input_nodes = [],
+        output_nodes = [],
+        landing_zone = {},
+        takeoff_zone = {}
+        requried_inputs_landed = False,
         **dismissed
         ):
+        
         
         if callable(estimator):
             transform_only = True
             transform_method = '__call__'
         if not name:
-            name = str(estimator)
-        
+            name = str(estimator)                
+    	if not required_inputs:
+        	required_inputs = insect.getfullargspec(estimator)[0]
+
+        ##### define everythong before this line
         local_vars = locals()
         for var_name in local_vars:            
             setattr(self, var_name,local_vars[var_name])
@@ -133,21 +143,61 @@ class Capsula():
     def hatch(self):
         return self['estimator']
 
+    def take(self,variables, to_node):
+    	if variables == 'all':    		
+    		out = self.takeoff_zone
+    		self.output_nodes.append(to_node)
+    		return out
+		else:
+			out = {self.takeoff_zone[out] for out in self.takeoff_zone if out in variables}
+			self.output_nodes.append(to_node)
+			return out
+
+    def land(self, input_node ,**inputs):
+    	
+    	inputs = input_node.take(variables = 'all', to_node = self['name'])
+    	landing_intersection =  set(self.landing_zone).intersection(inputs)
+    	if landing_intersection:
+    		raise KeyError('an input colision occured in the landing zone with the following variables: {}'.format(landing_intersection))
+    	
+    	self.landing_zone = {**self.landing_zone,**inputs}
+    	self.landed_nodes
+	
+	def clear_landing_zone(self):
+		self.landing_zone = {}
+
+	def check_landing_zone(self, params, return_missing = True):
+		if set(self.landing_zone).issubset(set(params)):
+			self.required_inputs_landed = True
+			return self.landing_zone
+		else:
+			self.required_inputs_landed = False
+			if return_missing == True:
+				return set(params) - set(self.landing_zone)
+			else:
+				return self.landing_zone
+
     def fit(
         self,
         **inputs
         ):
         
-        if self['transform_only'] == True:
-            print('{} is a tranform_only estimator. fit method will not be performed'.format(self['name']))
-            return
+        self.land(**inputs)
+        lz = self.check_landing_zone(self.required_inputs)
+        if self.required_inputs_landed == True:
+	        
+	        if self['transform_only'] == True:
+	            print('{} is a tranform_only estimator. fit method will not be performed'.format(self['name']))
+	            return
 
-        if self.allowed_inputs:
-            self.check(
-                allowed = self.allowed_inputs,
-                check_mode = self.input_check_mode,
-                inputs = inputs
-                )
+	        if self.required_inputs:
+	            self.check(
+	                allowed = self.required_inputs,
+	                check_mode = self.input_check_mode,
+	                inputs = inputs
+	                )
+        else:
+        	print('{} parameters are missing in landing_zone'.format(lz))
 
         getattr(
             self['estimator'],
@@ -176,9 +226,9 @@ class Capsula():
             print('{} is a fit_only estimator. transform method will not be performed'.format(self['name']))
             return
 
-        if self.allowed_inputs:
+        if self.required_inputs:
             inputs = self.check(
-                allowed = self.allowed_inputs,
+                allowed = self.required_inputs,
                 check_mode = self.input_check_mode,
                 inputs = inputs
                 )

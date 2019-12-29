@@ -126,12 +126,13 @@ class Capsula():
         output_name = None,
         wrapped_output = False,
         is_transformed = False,
+        is_callable = False,
         **dismissed
         ):
         
         
         if callable(estimator):
-            transform_only = True
+            is_callable = True
             transform_method = '__call__'
         if not name:
             name = str(estimator)                
@@ -149,13 +150,23 @@ class Capsula():
         
         return
 
+    def __repr__(self):
+        return self.name
+    
+    def __call__(self, inputs):
+        if not (isinstance(inputs,list) or isinstance(inputs,Capsula)):
+            raise TypeError('input must be instance of Capsula or list o Capsulas')
+
+        if isinstance(inputs,list):
+            self.input_nodes = inputs
+        else:
+            self.input_nodes = [inputs]
+        return self
+
     def hatch(self):
         return self.estimator
 
-    def __repr__(self):
-        return self.name
-
-    def take(self,variables, to_node):
+    def send(self,variables, to_node):
         
         if self.takeoff_state_mode == 'data':
             if not self.is_transformed == True:
@@ -197,9 +208,9 @@ class Capsula():
             warnings.warn('an output colision occured in the takeoff_zone with the following variables: {}. old values will be overwritten.'.format(storing_colisions))
         self.takeoff_zone = {**self.takeoff_zone,**values}
 
-    def land(self, sender):
+    def take(self, sender):
         
-        inputs = sender.take(variables = 'all', to_node = self.name)
+        inputs = sender.send(variables = 'all', to_node = self.name)
         print(inputs)
         landing_intersection =  set(self.landing_zone).intersection(inputs)
         if landing_intersection:
@@ -230,20 +241,20 @@ class Capsula():
                 return set(self.landing_zone)
 
     def fit(self):
-                
-        if self.transform_only == True:
-            print('{} is a tranform_only estimator. fit method will not be performed'.format(self.name))
+        
+        self.clear_landing_zone() 
+
+        if self.is_callable == True:
+            print('{} is a callable estimator and fit method will not be performed'.format(self.name))
             self.is_fitted = True
             return
 
         ### check if all inputs are in landing zone
-        self.check_landing_zone(self.required_inputs)
-        
+        self.check_landing_zone(self.required_inputs)        
         ### if not all required inputs are in landing zone, get it from previous nodes in graph
         if self.required_inputs_landed == False:
-            for node in self.input_nodes:
-                self.land(node)
-
+            for sender in self.input_nodes:
+                self.take(sender)
         ### check again
         lz_args = str(self.check_landing_zone(self.required_inputs, return_missing = True))
 
@@ -283,9 +294,8 @@ class Capsula():
 
     def transform(self):
 
-        if self.fit_only == True:
-            print('{} is a fit_only estimator. transform method will not be performed'.format(self.name))
-            return
+        self.clear_landing_zone()
+
         if self.is_fitted == False:
             self.fit()
 
@@ -294,8 +304,8 @@ class Capsula():
         
         ### if not all required inputs are in landing zone, get it form previous nodes in graph
         if self.required_inputs_landed == False:
-            for node in self.input_nodes:
-                self.land(node)
+            for sender in self.input_nodes:
+                self.take(sender)
 
         ### check again
         lz_args = str(self.check_landing_zone(self.required_inputs, return_missing = True))
@@ -328,7 +338,6 @@ class Capsula():
                 self.wrapped_output = True
             
             if self.takeoff_state_mode == 'data':
-                print('stored')
                 self.store(output)
             self.is_transformed = True
             return output
@@ -350,6 +359,26 @@ class Capsula():
     def output_wrapper(self, item ,var_name):
         self.wrapped_output = True
         return {str(var_name):item}
+
+    def bypass(self):
+        self.clear_landing_zone()
+        ### check if all inputs are in landing zone
+        self.check_landing_zone(self.required_inputs)        
+        ### if not all required inputs are in landing zone, get it from previous nodes in graph
+        if self.required_inputs_landed == False:
+            for sender in self.input_nodes:
+                self.take(sender)
+        ### check again
+        lz_args = str(self.check_landing_zone(self.required_inputs, return_missing = True))
+
+        if self.required_inputs_landed == True:            
+            inputs = self.landing_zone
+            self.clear_takeoff_zone()
+            self.store(**inputs)
+        else:
+            raise AttributeError('{} parameters are missing in {}.landing_zone'.format(lz_args,self.name))
+
+        return inputs
 
 
 def check_flow(allowed, check_mode, inputs):

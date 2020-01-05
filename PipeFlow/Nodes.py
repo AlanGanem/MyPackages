@@ -1,11 +1,12 @@
-from .Base import Capsula
+from Base import Capsula
 import inspect
 
 class Inputer(Capsula):
 
 	def __init__(self,inputer,**kwargs):
 		if callable(inputer):
-			required_vars = inspect.getfullargspec(inputer)[0]
+			inspectobj = inspect.getfullargspec(inputer)
+			required_vars = inspectobj.args[:-len(inspectobj.defaults)]
 			if required_vars != []:
 				raise ValueError('inputer takes {} but should have no required variable insted.'.format(required_vars))
 			super().__init__(

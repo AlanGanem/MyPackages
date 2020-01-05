@@ -1,16 +1,22 @@
-import joblib
+import pickle
 from abc import ABC, abstractmethod
 import warnings
 import inspect
+import re
+
+### Capsula not checking properly optional and required arguments of methods and functions
 
 class BaseEstimator(ABC):
-    
+
     @classmethod
-    def load(cls, loading_path, **joblibargs):        
-        return joblib.load(loading_path, **joblibargs)
-    
-    def save(self, saving_path, **joblibargs):
-        joblib.dump(self, saving_path, **joblibargs)
+    def load(cls, loading_path, **pickleargs):
+        with open(loading_path, 'rb') as file:
+            loaded_pipe = pickle.load(file, **pickleargs)
+        return loaded_pipe
+
+    def save(self, saving_path, **pickleargs):
+        with open(saving_path, 'wb') as file:
+            pickle.dump(self, file, **pickleargs)
             
                 
     def __init__(
@@ -129,15 +135,26 @@ class Capsula():
         is_callable = False,
         **dismissed
         ):
-        
-        
+
         if callable(estimator):
             is_callable = True
             transform_method = '__call__'
+
         if not name:
-            name = str(estimator)                
+            try:
+                name = estimator.__name__
+            except:
+                name = str(estimator)
+
         if not required_inputs:
-            required_inputs = inspect.getfullargspec(estimator)[0]
+            inspectobj = inspect.getfullargspec(estimator)            
+            try:
+                required_inputs = inspectobj.args[:-len(inspectobj.defaults)]
+            except TypeError:
+                required_inputs = inspectobj.args
+
+        if not allowed_outputs:
+            allowed_outputs = get_output_json_keys(estimator)
         if not output_name:
             output_name = name+'_output'
         output_nodes = set(output_nodes)
@@ -150,8 +167,11 @@ class Capsula():
         
         return
 
-    def __repr__(self):
+    def __str__(self):
         return self.name
+    
+    #def __repr__(self):
+    #    return self.name
     
     def __call__(self, inputs):
         if not (isinstance(inputs,list) or isinstance(inputs,Capsula)):
@@ -205,13 +225,12 @@ class Capsula():
 
         storing_colisions =  set(self.takeoff_zone).intersection(values)
         if storing_colisions:
-            warnings.warn('an output colision occured in the takeoff_zone with the following variables: {}. old values will be overwritten.'.format(storing_colisions))
+            warnings.warn('an output colision occured in {} takeoff_zone with the following variables: {}. old values will be overwritten.'.format(self.name,storing_colisions))
         self.takeoff_zone = {**self.takeoff_zone,**values}
 
     def take(self, sender):
         
         inputs = sender.send(variables = 'all', to_node = self.name)
-        print(inputs)
         landing_intersection =  set(self.landing_zone).intersection(inputs)
         if landing_intersection:
             raise KeyError('an input colision occured in the landing zone with the following variables: {}'.format(landing_intersection))
@@ -230,12 +249,10 @@ class Capsula():
         
         if set(params).issubset(set(self.landing_zone)):
             self.required_inputs_landed = True
-            print('landoze is ok')
             return set(self.landing_zone)
         else:           
             self.required_inputs_landed = False
             if return_missing == True:
-                print('landoze is missing {}'.format(str(set(params) - set(self.landing_zone))))
                 return set(params) - set(self.landing_zone)
             else:
                 return set(self.landing_zone)
@@ -283,9 +300,6 @@ class Capsula():
         
         else:
             raise AttributeError('{} parameters are missing in {}.landing_zone'.format(lz_args,self.name))
-
-    #def __getitem__(self, key):
-    #   return self.__dict__[key]
 
     def __setitem__(self,key,value):
         setattr(self,key,value)
@@ -418,3 +432,21 @@ def check_flow(allowed, check_mode, inputs):
 
     else:        
         raise ValueError('check_mode should be one of ["filter","raise","ignore", "warn"]')
+
+def get_output_json_keys(estimator):
+    try:
+        source_code = inspect.getsource(estimator)
+        json_str = source_code.split('return')[-1]
+        json_str = json_str.replace(' ', '')
+        json_str = json_str.replace("'", '"')
+
+        values = re.findall('"([^"]+?)"\s*:', json_str)
+        allowed_outputs = values
+    except:
+        source_code = inspect.getsource(estimator)
+        json_str = source_code.split('return')[-1]
+        json_str = json_str.replace(' ', '')
+        json_str = json_str.replace("'", '"')
+        allowed_outputs = [json_str]
+
+    return allowed_outputs

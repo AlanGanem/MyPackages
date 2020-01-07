@@ -8,14 +8,14 @@ from Utils import model_to_dot
 a = 1
 b = 2
 c = 3
-def infoo(a=a):
-    return {'input1': a}
 
-def inbar(b=b):
-    return {'input1': b, 'input2': 2 * b}
+{'input1': a}
 
-def externalinput(c=c):
-    return {'externalinput': c}
+
+{'input1': b, 'input2': 2 * b}
+
+
+{'externalinput': c}
 
 def foo(input1):
     return {'outputfoo': input1 ** 2}

@@ -1,30 +1,32 @@
 from Base import Capsula
 import inspect
 
+class Node(Capsula):
+	pass
+
 class Inputer(Capsula):
+	def __init__(self,**kwargs):
+		super().__init__(
+			None,
+			takeoff_state_mode = 'data',
+			name = '',
+			transform_only = False,
+			is_fitted = True,
+			is_callable = False,
+			required_inputs = {},
+			**kwargs
+			)
 
-	def __init__(self,inputer,**kwargs):
-		if callable(inputer):
-			inspectobj = inspect.getfullargspec(inputer)
-			required_vars = inspectobj.args[:-len(inspectobj.defaults)]
-			if required_vars != []:
-				raise ValueError('inputer takes {} but should have no required variable insted.'.format(required_vars))
-			super().__init__(
-				inputer,
-				takeoff_state_mode = 'generator',
-				transform_only = True,
-				is_fitted = True,
-				**kwargs
-				)
+	def __call__(self,**kwargs):
+		self.store(kwargs)
+	def transform(self, pipe_call):
+		# Send only if call matches fit_only/transform_only
+		if (self.fit_only) and (pipe_call == 'transform'):
+			return {}
+		elif (self.transform_only) and (pipe_call == 'fit'):
+			return {}
+		
+		return self.takeoff_zone
 
-		else:
-			super().__init__(
-				None,
-				takeoff_zone = inputer,
-				takeoff_state_mode = 'data',
-				transform_only = True,
-				is_fitted = True,
-				**kwargs
-				)
-		
-		
+
+

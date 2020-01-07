@@ -10,8 +10,10 @@ import pickle
 
 import networkx as nx
 from matplotlib import pyplot as plt
+import datetime
 
 from Base import *
+from Nodes import *
 from Utils import create_graph, model_to_dot
 
 
@@ -26,6 +28,8 @@ class Custom():
         return loaded_pipe
     
     def save(self, saving_path, **pickleargs):
+        self.clear_landing_zones()
+        self.clear_takeoff_zones()
         with open(saving_path, 'wb') as file:
             pickle.dump(self, file, **pickleargs)
 
@@ -36,6 +40,7 @@ class Custom():
         if not isinstance(output_nodes, list):
             raise TypeError('output_nodes must be list')
         
+        print([(node.__class__,isinstance(node, Capsula)) for node in input_nodes+output_nodes])
         assert all([isinstance(node, Capsula) for node in input_nodes+output_nodes])
         graph = self.build_graph(output_nodes)        
         self.check_graph(graph,input_nodes, output_nodes)
@@ -44,6 +49,8 @@ class Custom():
         self.index_name_map = {node.name:index for index,node in enumerate(graph)}
         self.input_nodes = input_nodes
         self.output_nodes = output_nodes
+        self.creation_date = datetime.datetime.now()
+
         
     
     def __iter__(self):
@@ -58,29 +65,46 @@ class Custom():
         graph = nx.DiGraph()
         for output in output_nodes:
             create_graph(output, graph)
-        
+
         return graph
-        
-    def fit(self):
+
+    def populate_inputers(self, inputs):
+        for node in self.input_nodes:
+            node(inputs)
+
+    def fit(self, inputs):
+        assert isinstance(inputs, list)
+        assert isinstance(outputs, list)
+        assert len(outputs) == len(self.output_nodes)
+        assert len(inputs) == len(self.input_nodes)
+
+        self.populate_inputers(inputs)
+
         for node in self.output_nodes:
             if node.transform_only == True:
-                node.bypass()
+                pass
             else:
-                node.fit()
-
+                node.fit(pipe_call = 'fit')
+        self.last_fit_date = datetime.datetime.now()
         return self     
-    
-    def transform(self):
+
+    def transform(self, inputs):
+        assert isinstance(inputs, list)
+        assert len(inputs) == len(self.input_nodes)
+
         self.clear_landing_zones()
+        self.populate_inputers(inputs)
+
         outputs = {}
         for node in self.output_nodes:
             if node.fit_only == True:
-                outputs[str(node)] = node.bypass()                
+                pass
             else:
-                outputs[str(node)] = node.transform()
+                outputs[str(node)] = node.transform(pipe_call = 'transform')
 
         if len(self.output_nodes) == 1:
             outputs = outputs[str(node)]
+        self.last_transform_date = datetime.datetime.now()
         return outputs
                             
     def check_graph(self,graph, input_nodes, output_nodes):
@@ -144,9 +168,13 @@ class Sequential(Custom):
         estim_list = []
         for i, estim in enumerate(estimators):
             if i == 0:
-                estim_list.append(Inputer(estim))
+                estim_list.append(Inputer())
             else:
-                estim_list.append(Capsula(estim, input_nodes = estim_list[i-1]))
+                if isinstance(estim, Capsula):
+                    setattr(estim, 'input_nodes', estim_list[i-1:i])
+                    estim_list.append(estim)
+                else:
+                    estim_list.append(Capsula(estim, input_nodes = estim_list[i-1:i]))
             i+=1
         input_nodes = [estim_list[0]]
         output_nodes = [estim_list[-1]]

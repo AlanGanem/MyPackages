@@ -37,7 +37,7 @@ class BaseEstimator(ABC):
             assert isinstance(outputs, list)
         
         
-        if  name:
+        if name:
             self.__name__ = name
         
         self.inputs = inputs
@@ -112,7 +112,7 @@ class Capsula():
         estimator,
         name = None,
         fit_method = 'fit',
-        fit_only = None,
+        fit_only = False,
         transform_method = 'transform',
         transform_only = False,
         estimator_fitargs = {},
@@ -135,10 +135,17 @@ class Capsula():
         is_callable = False,
         **dismissed
         ):
-
+        
+        
+        if isinstance(estimator, self.__class__):
+            return
+        
+        if fit_only and transform_only:
+            raise AssertionError('fit_only and transform_only cannot be assigned simutaneously')
         if callable(estimator):
             is_callable = True
             transform_method = '__call__'
+            fit_method = '__call__'
 
         if not name:
             try:
@@ -146,15 +153,25 @@ class Capsula():
             except:
                 name = str(estimator)
 
-        if not required_inputs:
-            inspectobj = inspect.getfullargspec(estimator)            
-            try:
-                required_inputs = inspectobj.args[:-len(inspectobj.defaults)]
-            except TypeError:
-                required_inputs = inspectobj.args
+        if estimator != None:
+            
+            if not required_inputs:
+                if fit_only:
+                    inspectobj = inspect.getfullargspec(getattr(estimator, fit_method))
+                elif transform_only:
+                    inspectobj = inspect.getfullargspec(getattr(estimator, transform_method))
+                else:
+                    inspectobj = inspect.getfullargspec(getattr(estimator, fit_method))
+
+                try:
+                    required_inputs = inspectobj.args[:-len(inspectobj.defaults)]
+                    optional_inputs = inspectobj.args[-len(inspectobj.defaults):]
+                except TypeError:
+                    required_inputs = inspectobj.args
+                    optional_inputs = 'None'
 
         if not allowed_outputs:
-            allowed_outputs = get_output_json_keys(estimator)
+            allowed_outputs = get_output_json_keys(estimator, transform_method)
         if not output_name:
             output_name = name+'_output'
         output_nodes = set(output_nodes)
@@ -186,11 +203,11 @@ class Capsula():
     def hatch(self):
         return self.estimator
 
-    def send(self,variables, to_node):
-        
+    def send(self,variables, to_node, pipe_call):
+
         if self.takeoff_state_mode == 'data':
             if not self.is_transformed == True:
-                self.transform()
+                self.transform(pipe_call=pipe_call)
             if variables == 'all':          
                 out = self.takeoff_zone
                 self.departures.append(to_node)
@@ -206,13 +223,13 @@ class Capsula():
         elif self.takeoff_state_mode == 'generator':
 
             if variables == 'all':                          
-                out = self.transform()
+                out = self.transform(pipe_call = pipe_call)
                 self.departures.append(to_node)
                 self.output_nodes.add(to_node)
                 return out
             else:
                 assert isinstance(variables,list)
-                output = self.transform()
+                output = self.transform(pipe_call = pipe_call)
                 out = {output[out] for out in self.takeoff_zone if out in variables}
                 self.departures.append(to_node)
                 self.output_nodes.add(to_node)
@@ -228,9 +245,9 @@ class Capsula():
             warnings.warn('an output colision occured in {} takeoff_zone with the following variables: {}. old values will be overwritten.'.format(self.name,storing_colisions))
         self.takeoff_zone = {**self.takeoff_zone,**values}
 
-    def take(self, sender):
+    def take(self, sender, pipe_call):
         
-        inputs = sender.send(variables = 'all', to_node = self.name)
+        inputs = sender.send(variables = 'all', to_node = self.name, pipe_call = pipe_call)
         landing_intersection =  set(self.landing_zone).intersection(inputs)
         if landing_intersection:
             raise KeyError('an input colision occured in the landing zone with the following variables: {}'.format(landing_intersection))
@@ -257,8 +274,8 @@ class Capsula():
             else:
                 return set(self.landing_zone)
 
-    def fit(self):
-        
+    def fit(self, pipe_call):
+
         self.clear_landing_zone() 
 
         if self.is_callable == True:
@@ -271,7 +288,7 @@ class Capsula():
         ### if not all required inputs are in landing zone, get it from previous nodes in graph
         if self.required_inputs_landed == False:
             for sender in self.input_nodes:
-                self.take(sender)
+                self.take(sender, pipe_call = pipe_call)
         ### check again
         lz_args = str(self.check_landing_zone(self.required_inputs, return_missing = True))
 
@@ -306,12 +323,18 @@ class Capsula():
         return
 
 
-    def transform(self):
+    def transform(self, pipe_call):
+
+        # Send only if call matches fit_only/transform_only
+        if (self.fit_only) and (pipe_call == 'transform'):
+            return self.bypass()
+        elif (self.transform_only) and (pipe_call == 'fit'):
+            return self.bypass()
 
         self.clear_landing_zone()
 
         if self.is_fitted == False:
-            self.fit()
+            self.fit(pipe_call = pipe_call)
 
         ### check if all inputs are in landing zone
         self.check_landing_zone(self.required_inputs)
@@ -319,7 +342,7 @@ class Capsula():
         ### if not all required inputs are in landing zone, get it form previous nodes in graph
         if self.required_inputs_landed == False:
             for sender in self.input_nodes:
-                self.take(sender)
+                self.take(sender, pipe_call= pipe_call)
 
         ### check again
         lz_args = str(self.check_landing_zone(self.required_inputs, return_missing = True))
@@ -374,14 +397,14 @@ class Capsula():
         self.wrapped_output = True
         return {str(var_name):item}
 
-    def bypass(self):
+    def bypass(self, pipe_call):
         self.clear_landing_zone()
         ### check if all inputs are in landing zone
         self.check_landing_zone(self.required_inputs)        
         ### if not all required inputs are in landing zone, get it from previous nodes in graph
         if self.required_inputs_landed == False:
             for sender in self.input_nodes:
-                self.take(sender)
+                self.take(sender, pipe_call = pipe_call)
         ### check again
         lz_args = str(self.check_landing_zone(self.required_inputs, return_missing = True))
 
@@ -433,20 +456,23 @@ def check_flow(allowed, check_mode, inputs):
     else:        
         raise ValueError('check_mode should be one of ["filter","raise","ignore", "warn"]')
 
-def get_output_json_keys(estimator):
-    try:
-        source_code = inspect.getsource(estimator)
+def get_output_json_keys(estimator, transform_method):
+    
+    if estimator != None:
+        if transform_method != '__call__':
+            source_code = inspect.getsource(getattr(estimator, transform_method))
+        else:
+            source_code = inspect.getsource(estimator)
+        
         json_str = source_code.split('return')[-1]
         json_str = json_str.replace(' ', '')
         json_str = json_str.replace("'", '"')
-
-        values = re.findall('"([^"]+?)"\s*:', json_str)
-        allowed_outputs = values
-    except:
-        source_code = inspect.getsource(estimator)
-        json_str = source_code.split('return')[-1]
-        json_str = json_str.replace(' ', '')
-        json_str = json_str.replace("'", '"')
-        allowed_outputs = [json_str]
+        try:
+            values = re.findall('"([^"]+?)"\s*:', json_str)
+            allowed_outputs = values
+        except:
+            allowed_outputs = [json_str]
+    else:
+        allowed_outputs = {}
 
     return allowed_outputs

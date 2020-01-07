@@ -118,6 +118,7 @@ class Capsula():
         estimator_fitargs = {},
         estimator_transformargs = {},
         required_inputs = None,
+        optional_inputs = None,
         allowed_outputs = None,
         input_check_mode = 'warn',
         output_check_mode = 'warn',
@@ -156,19 +157,37 @@ class Capsula():
         if estimator != None:
             
             if not required_inputs:
-                if fit_only:
-                    inspectobj = inspect.getfullargspec(getattr(estimator, fit_method))
-                elif transform_only:
-                    inspectobj = inspect.getfullargspec(getattr(estimator, transform_method))
+                required_inputs = {}
+                optional_inputs = {}
+                inspectobjs = {}
+
+                if not is_callable:
+                    inspectobjs['fit'] = inspect.getfullargspec(getattr(estimator, fit_method))
+                    inspectobjs['transform'] = inspect.getfullargspec(getattr(estimator, transform_method))
                 else:
-                    inspectobj = inspect.getfullargspec(getattr(estimator, fit_method))
+                    inspectobjs['fit'] = inspect.getfullargspec(estimator)
+                    inspectobjs['transform'] = inspectobjs['fit']
 
                 try:
-                    required_inputs = inspectobj.args[:-len(inspectobj.defaults)]
-                    optional_inputs = inspectobj.args[-len(inspectobj.defaults):]
-                except TypeError:
-                    required_inputs = inspectobj.args
-                    optional_inputs = 'None'
+                    required_inputs['fit'] = inspectobjs['fit'].args[:-len(inspectobjs['fit'].defaults)]
+                except:
+                    required_inputs['fit'] = inspectobjs['fit'].args
+                try:
+                    required_inputs['transform'] = inspectobjs['transform'].args[:-len(inspectobjs['transform'].defaults)]
+                except:
+                    required_inputs['transform'] = inspectobjs['transform'].args
+
+
+                try:
+                    optional_inputs['fit'] = inspectobjs['fit'].args[-len(inspectobjs['fit'].defaults):]
+                except:
+                    optional_inputs['fit'] = 'None'
+                try:
+                    optional_inputs['transform'] = inspectobjs['transform'].args[-len(inspectobjs['transform'].defaults):]
+                except:
+                    optional_inputs['transform'] = 'None'
+
+
 
         if not allowed_outputs:
             allowed_outputs = get_output_json_keys(estimator, transform_method)
@@ -275,6 +294,11 @@ class Capsula():
                 return set(self.landing_zone)
 
     def fit(self, pipe_call):
+        # Send only if call matches fit_only/transform_only
+        if (self.fit_only) and (pipe_call == 'transform'):
+            return self.bypass(pipe_call=pipe_call, node_call='fit')
+        elif (self.transform_only) and (pipe_call == 'fit'):
+            return self.bypass(pipe_call=pipe_call, node_call='fit')
 
         self.clear_landing_zone() 
 
@@ -284,22 +308,22 @@ class Capsula():
             return
 
         ### check if all inputs are in landing zone
-        self.check_landing_zone(self.required_inputs)        
+        self.check_landing_zone(self.required_inputs['fit'])
         ### if not all required inputs are in landing zone, get it from previous nodes in graph
         if self.required_inputs_landed == False:
             for sender in self.input_nodes:
                 self.take(sender, pipe_call = pipe_call)
         ### check again
-        lz_args = str(self.check_landing_zone(self.required_inputs, return_missing = True))
+        lz_args = str(self.check_landing_zone(self.required_inputs['fit'], return_missing = True))
 
         ### if all required inputs are in landing zone, perform fit
         if self.required_inputs_landed == True:
             
             inputs = self.landing_zone
 
-            if self.required_inputs:
+            if self.required_inputs['fit']:
                 self.check(
-                    allowed = self.required_inputs,
+                    allowed = self.required_inputs['fit'],
                     check_mode = self.input_check_mode,
                     inputs = inputs
                     )
@@ -327,9 +351,9 @@ class Capsula():
 
         # Send only if call matches fit_only/transform_only
         if (self.fit_only) and (pipe_call == 'transform'):
-            return self.bypass()
+            return self.bypass(pipe_call=pipe_call, node_call='transform')
         elif (self.transform_only) and (pipe_call == 'fit'):
-            return self.bypass()
+            return self.bypass(pipe_call=pipe_call, node_call='transform')
 
         self.clear_landing_zone()
 
@@ -337,7 +361,7 @@ class Capsula():
             self.fit(pipe_call = pipe_call)
 
         ### check if all inputs are in landing zone
-        self.check_landing_zone(self.required_inputs)
+        self.check_landing_zone(self.required_inputs['transform'])
         
         ### if not all required inputs are in landing zone, get it form previous nodes in graph
         if self.required_inputs_landed == False:
@@ -345,16 +369,16 @@ class Capsula():
                 self.take(sender, pipe_call= pipe_call)
 
         ### check again
-        lz_args = str(self.check_landing_zone(self.required_inputs, return_missing = True))
+        lz_args = str(self.check_landing_zone(self.required_inputs['transform'], return_missing = True))
 
         ### if all required inputs are in landing zone, perform transform
         if self.required_inputs_landed == True:
             
             inputs = self.landing_zone
         
-            if self.required_inputs:
+            if self.required_inputs['transform']:
                 self.check(
-                    allowed = self.required_inputs,
+                    allowed = self.required_inputs['transform'],
                     check_mode = self.input_check_mode,
                     inputs = inputs
                     )
@@ -397,16 +421,16 @@ class Capsula():
         self.wrapped_output = True
         return {str(var_name):item}
 
-    def bypass(self, pipe_call):
+    def bypass(self, pipe_call, node_call):
         self.clear_landing_zone()
         ### check if all inputs are in landing zone
-        self.check_landing_zone(self.required_inputs)        
+        self.check_landing_zone(self.required_inputs[node_call])
         ### if not all required inputs are in landing zone, get it from previous nodes in graph
         if self.required_inputs_landed == False:
             for sender in self.input_nodes:
                 self.take(sender, pipe_call = pipe_call)
         ### check again
-        lz_args = str(self.check_landing_zone(self.required_inputs, return_missing = True))
+        lz_args = str(self.check_landing_zone(self.required_inputs[node_call], return_missing = True))
 
         if self.required_inputs_landed == True:            
             inputs = self.landing_zone

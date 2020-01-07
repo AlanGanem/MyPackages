@@ -38,8 +38,12 @@ def model_to_dot(graph,
             optional_input_labels = 'None'
 
         else:
-            required_input_labels = [input for input in node.required_inputs if input != 'self']
-            optional_input_labels = node.optional_inputs
+            if not node.is_callable:
+                required_input_labels = node.required_inputs
+                optional_input_labels = node.optional_inputs
+            else:
+                required_input_labels = node.required_inputs['fit']
+                optional_input_labels = node.optional_inputs['fit']
 
         if node.allowed_outputs:
             output_labels = node.allowed_outputs

@@ -39,8 +39,6 @@ class Custom():
 
         if not isinstance(output_nodes, list):
             raise TypeError('output_nodes must be list')
-        
-        print([(node.__class__,isinstance(node, Capsula)) for node in input_nodes+output_nodes])
         assert all([isinstance(node, Capsula) for node in input_nodes+output_nodes])
         graph = self.build_graph(output_nodes)        
         self.check_graph(graph,input_nodes, output_nodes)

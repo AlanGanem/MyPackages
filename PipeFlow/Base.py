@@ -154,43 +154,22 @@ class Capsula():
             except:
                 name = str(estimator)
 
+
         if estimator != None:
-            
             if not required_inputs:
-                required_inputs = {}
-                optional_inputs = {}
-                inspectobjs = {}
+                inputs = self.get_inputs(
+                    is_callable = is_callable,
+                    estimator = estimator,
+                    fit_method = fit_method,
+                    transform_method = transform_method
+                )
 
-                if not is_callable:
-                    inspectobjs['fit'] = inspect.getfullargspec(getattr(estimator, fit_method))
-                    inspectobjs['transform'] = inspect.getfullargspec(getattr(estimator, transform_method))
-                else:
-                    inspectobjs['fit'] = inspect.getfullargspec(estimator)
-                    inspectobjs['transform'] = inspectobjs['fit']
-
-                try:
-                    required_inputs['fit'] = inspectobjs['fit'].args[:-len(inspectobjs['fit'].defaults)]
-                except:
-                    required_inputs['fit'] = inspectobjs['fit'].args
-                try:
-                    required_inputs['transform'] = inspectobjs['transform'].args[:-len(inspectobjs['transform'].defaults)]
-                except:
-                    required_inputs['transform'] = inspectobjs['transform'].args
-
-
-                try:
-                    optional_inputs['fit'] = inspectobjs['fit'].args[-len(inspectobjs['fit'].defaults):]
-                except:
-                    optional_inputs['fit'] = 'None'
-                try:
-                    optional_inputs['transform'] = inspectobjs['transform'].args[-len(inspectobjs['transform'].defaults):]
-                except:
-                    optional_inputs['transform'] = 'None'
-
-
+                required_inputs = inputs['required_inputs']
+                optional_inputs = inputs['optional_inputs']
 
         if not allowed_outputs:
-            allowed_outputs = get_output_json_keys(estimator, transform_method)
+            allowed_outputs = get_output_json_keys(estimator = estimator, transform_method = transform_method, fit_method = fit_method)
+
         if not output_name:
             output_name = name+'_output'
         output_nodes = set(output_nodes)
@@ -258,8 +237,8 @@ class Capsula():
             raise ValueError('{}.takeoff_state_mode must be one of ["data","generator"]'.format(self.name))
 
     def store(self, values):
-
-        storing_colisions =  set(self.takeoff_zone).intersection(values)
+        print(values)
+        storing_colisions =  set(self.takeoff_zone).intersection(set(values))
         if storing_colisions:
             warnings.warn('an output colision occured in {} takeoff_zone with the following variables: {}. old values will be overwritten.'.format(self.name,storing_colisions))
         self.takeoff_zone = {**self.takeoff_zone,**values}
@@ -346,6 +325,57 @@ class Capsula():
         setattr(self,key,value)
         return
 
+    def get_inputs(self,is_callable, estimator, fit_method, transform_method):
+        required_inputs = {}
+        optional_inputs = {}
+        inspectobjs = {}
+
+        if not is_callable:
+            inspectobjs['fit'] = inspect.getfullargspec(getattr(estimator, fit_method))
+            inspectobjs['transform'] = inspect.getfullargspec(getattr(estimator, transform_method))
+            try:
+                required_inputs['fit'] = inspectobjs['fit'].args[1:][:-len(inspectobjs['fit'].defaults)]
+            except:
+                required_inputs['fit'] = inspectobjs['fit'].args[1:]
+            try:
+                required_inputs['transform'] = inspectobjs['transform'].args[1:][
+                                               :-len(inspectobjs['transform'].defaults)]
+            except:
+                required_inputs['transform'] = inspectobjs['transform'].args[1:]
+
+            try:
+                optional_inputs['fit'] = inspectobjs['fit'].args[1:][-len(inspectobjs['fit'].defaults):]
+            except:
+                optional_inputs['fit'] = 'None'
+            try:
+                optional_inputs['transform'] = inspectobjs[1:]['transform'].args[
+                                               -len(inspectobjs['transform'].defaults):]
+            except:
+                optional_inputs['transform'] = 'None'
+        else:
+            inspectobjs['fit'] = inspect.getfullargspec(estimator)
+            inspectobjs['transform'] = inspectobjs['fit']
+            try:
+                required_inputs['fit'] = inspectobjs['fit'].args[:-len(inspectobjs['fit'].defaults)]
+            except:
+                required_inputs['fit'] = inspectobjs['fit'].args
+            try:
+                required_inputs['transform'] = inspectobjs['transform'].args[
+                                               :-len(inspectobjs['transform'].defaults)]
+            except:
+                required_inputs['transform'] = inspectobjs['transform'].args
+
+            try:
+                optional_inputs['fit'] = inspectobjs['fit'].args[-len(inspectobjs['fit'].defaults):]
+            except:
+                optional_inputs['fit'] = 'None'
+            try:
+                optional_inputs['transform'] = inspectobjs['transform'].args[
+                                               -len(inspectobjs['transform'].defaults):]
+            except:
+                optional_inputs['transform'] = 'None'
+
+        return {'required_inputs':required_inputs, 'optional_inputs':optional_inputs}
 
     def transform(self, pipe_call):
 
@@ -480,22 +510,36 @@ def check_flow(allowed, check_mode, inputs):
     else:        
         raise ValueError('check_mode should be one of ["filter","raise","ignore", "warn"]')
 
-def get_output_json_keys(estimator, transform_method):
+def get_output_json_keys(estimator,fit_method, transform_method):
     
     if estimator != None:
+        source_code = {}
+        json_str = {}
+        allowed_outputs = {}
         if transform_method != '__call__':
-            source_code = inspect.getsource(getattr(estimator, transform_method))
+            source_code['fit'] = inspect.getsource(getattr(estimator, fit_method))
+            source_code['transform'] = inspect.getsource(getattr(estimator, transform_method))
         else:
-            source_code = inspect.getsource(estimator)
+            source_code['fit'] = inspect.getsource(estimator)
+            source_code['transform'] = inspect.getsource(estimator)
         
-        json_str = source_code.split('return')[-1]
-        json_str = json_str.replace(' ', '')
-        json_str = json_str.replace("'", '"')
+        json_str['fit'] = source_code['fit'].split('return')[-1]
+        json_str['fit'] = json_str['fit'].replace(' ', '')
+        json_str['fit'] = json_str['fit'].replace("'", '"')
+
+        json_str['transform'] = source_code['transform'].split('return')[-1]
+        json_str['transform'] = json_str['transform'].replace(' ', '')
+        json_str['transform'] = json_str['transform'].replace("'", '"')
         try:
-            values = re.findall('"([^"]+?)"\s*:', json_str)
-            allowed_outputs = values
+            values = re.findall('"([^"]+?)"\s*:', json_str['fit'])
+            allowed_outputs['fit'] = values
         except:
-            allowed_outputs = [json_str]
+            allowed_outputs['fit'] = [json_str]
+        try:
+            values = re.findall('"([^"]+?)"\s*:', json_str['transform'])
+            allowed_outputs['transform'] = values
+        except:
+            allowed_outputs['transform'] = [json_str]
     else:
         allowed_outputs = {}
 

@@ -67,13 +67,14 @@ class Custom():
         return graph
 
     def populate_inputers(self, inputs):
+        print(self.input_nodes)
+        i = 0
         for node in self.input_nodes:
-            node(inputs)
+            node(inputs[i])
+            i+=1
 
     def fit(self, inputs):
         assert isinstance(inputs, list)
-        assert isinstance(outputs, list)
-        assert len(outputs) == len(self.output_nodes)
         assert len(inputs) == len(self.input_nodes)
 
         self.populate_inputers(inputs)

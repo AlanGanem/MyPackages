@@ -17,7 +17,7 @@ class Inputer(Capsula):
 			**kwargs
 			)
 
-	def __call__(self,**kwargs):
+	def __call__(self,kwargs):
 		self.store(kwargs)
 	def transform(self, pipe_call):
 		# Send only if call matches fit_only/transform_only

@@ -130,16 +130,14 @@ class Capsula():
         takeoff_state_mode = 'data',
         requried_inputs_landed = False,
         is_fitted = False,
-        output_name = None,
         wrapped_output = False,
         is_transformed = False,
         is_callable = False,
-        **dismissed
+        clear_zones = True
         ):
-        
-        
+
         if isinstance(estimator, self.__class__):
-            return
+            raise TypeError('estimator should not be an instance of {}'.format(self.__class__))
         
         if fit_only and transform_only:
             raise AssertionError('fit_only and transform_only cannot be assigned simutaneously')
@@ -167,11 +165,15 @@ class Capsula():
                 required_inputs = inputs['required_inputs']
                 optional_inputs = inputs['optional_inputs']
 
+        
+        output_name = {}    
+        output_name['fit'] = name+'_fit_output'
+        output_name['transform'] = name + '_transform_output'
+        
         if not allowed_outputs:
             allowed_outputs = get_output_json_keys(estimator = estimator, transform_method = transform_method, fit_method = fit_method)
+        
 
-        if not output_name:
-            output_name = name+'_output'
         output_nodes = set(output_nodes)
         input_nodes = input_nodes
 
@@ -213,7 +215,7 @@ class Capsula():
                 return out
             else:
                 assert isinstance(variables,list)
-                out = {self.takeoff_zone[out] for out in self.takeoff_zone if out in variables}
+                out = {out:self.takeoff_zone[out] for out in self.takeoff_zone if out in variables}
                 self.departures.append(to_node)
                 self.output_nodes.add(to_node)
                 return out
@@ -228,7 +230,7 @@ class Capsula():
             else:
                 assert isinstance(variables,list)
                 output = self.transform(pipe_call = pipe_call)
-                out = {output[out] for out in self.takeoff_zone if out in variables}
+                out = {out:output[out] for out in self.takeoff_zone if out in variables}
                 self.departures.append(to_node)
                 self.output_nodes.add(to_node)
                 return out
@@ -243,9 +245,13 @@ class Capsula():
             warnings.warn('an output colision occured in {} takeoff_zone with the following variables: {}. old values will be overwritten.'.format(self.name,storing_colisions))
         self.takeoff_zone = {**self.takeoff_zone,**values}
 
-    def take(self, sender, pipe_call):
+    def take(self, variables, sender, pipe_call):
         
-        inputs = sender.send(variables = 'all', to_node = self.name, pipe_call = pipe_call)
+        inputs = sender.send(
+            variables = variables,
+            to_node = self.name,
+            pipe_call = pipe_call
+        )
         landing_intersection =  set(self.landing_zone).intersection(inputs)
         if landing_intersection:
             raise KeyError('an input colision occured in the landing zone with the following variables: {}'.format(landing_intersection))
@@ -278,8 +284,9 @@ class Capsula():
             return self.bypass(pipe_call=pipe_call, node_call='fit')
         elif (self.transform_only) and (pipe_call == 'fit'):
             return self.bypass(pipe_call=pipe_call, node_call='fit')
-
-        self.clear_landing_zone() 
+        
+        if self.clear_zones:
+            self.clear_landing_zone() 
 
         if self.is_callable == True:
             print('{} is a callable estimator and fit method will not be performed'.format(self.name))
@@ -291,7 +298,8 @@ class Capsula():
         ### if not all required inputs are in landing zone, get it from previous nodes in graph
         if self.required_inputs_landed == False:
             for sender in self.input_nodes:
-                self.take(sender, pipe_call = pipe_call)
+                variables = self.required_inputs['fit'] + self.optional_inputs['fit']
+                self.take(sender = sender, variables = variables, pipe_call = pipe_call)
         ### check again
         lz_args = str(self.check_landing_zone(self.required_inputs['fit'], return_missing = True))
 
@@ -299,13 +307,10 @@ class Capsula():
         if self.required_inputs_landed == True:
             
             inputs = self.landing_zone
-
-            if self.required_inputs['fit']:
-                self.check(
-                    allowed = self.required_inputs['fit'],
-                    check_mode = self.input_check_mode,
-                    inputs = inputs
-                    )
+            #filter inputs
+            inputs = {key:value for key,value in inputs.items()
+                      if key in self.required_inputs['fit']+
+                      self.optional_inputs['fit']}
 
             getattr(
                 self.estimator,
@@ -316,7 +321,7 @@ class Capsula():
                 )
             
             self.is_fitted = True
-            return self
+            return self.hatch()
         
         else:
             raise AttributeError('{} parameters are missing in {}.landing_zone'.format(lz_args,self.name))
@@ -346,12 +351,12 @@ class Capsula():
             try:
                 optional_inputs['fit'] = inspectobjs['fit'].args[1:][-len(inspectobjs['fit'].defaults):]
             except:
-                optional_inputs['fit'] = 'None'
+                optional_inputs['fit'] = ['']
             try:
                 optional_inputs['transform'] = inspectobjs[1:]['transform'].args[
                                                -len(inspectobjs['transform'].defaults):]
             except:
-                optional_inputs['transform'] = 'None'
+                optional_inputs['transform'] = ['']
         else:
             inspectobjs['fit'] = inspect.getfullargspec(estimator)
             inspectobjs['transform'] = inspectobjs['fit']
@@ -368,12 +373,12 @@ class Capsula():
             try:
                 optional_inputs['fit'] = inspectobjs['fit'].args[-len(inspectobjs['fit'].defaults):]
             except:
-                optional_inputs['fit'] = 'None'
+                optional_inputs['fit'] = ['']
             try:
                 optional_inputs['transform'] = inspectobjs['transform'].args[
                                                -len(inspectobjs['transform'].defaults):]
             except:
-                optional_inputs['transform'] = 'None'
+                optional_inputs['transform'] = ['']
 
         return {'required_inputs':required_inputs, 'optional_inputs':optional_inputs}
 
@@ -385,7 +390,8 @@ class Capsula():
         elif (self.transform_only) and (pipe_call == 'fit'):
             return self.bypass(pipe_call=pipe_call, node_call='transform')
 
-        self.clear_landing_zone()
+        if self.clear_zones:
+            self.clear_landing_zone() 
 
         if self.is_fitted == False:
             self.fit(pipe_call = pipe_call)
@@ -396,7 +402,8 @@ class Capsula():
         ### if not all required inputs are in landing zone, get it form previous nodes in graph
         if self.required_inputs_landed == False:
             for sender in self.input_nodes:
-                self.take(sender, pipe_call= pipe_call)
+                variables = self.required_inputs['transform'] + self.optional_inputs['transform']
+                self.take(sender = sender, variables = variables, pipe_call = pipe_call)
 
         ### check again
         lz_args = str(self.check_landing_zone(self.required_inputs['transform'], return_missing = True))
@@ -405,13 +412,10 @@ class Capsula():
         if self.required_inputs_landed == True:
             
             inputs = self.landing_zone
-        
-            if self.required_inputs['transform']:
-                self.check(
-                    allowed = self.required_inputs['transform'],
-                    check_mode = self.input_check_mode,
-                    inputs = inputs
-                    )
+            #filter inputs
+            inputs = {key:value for key,value in inputs.items()
+                      if key in self.required_inputs['transform']+
+                      self.optional_inputs['transform']}
             
 
             output = getattr(
@@ -424,8 +428,12 @@ class Capsula():
 
             self.wrapped_output = True
             if not isinstance(output, dict):
-                output = self.output_wrapper(output, var_name = self.output_name)
-                warnings.warn(('{} output type is {} instead of {}.\noutput have been wrapped in dict with key {}'.format(self.name, type(output), 'dict', str(self.output_name))))
+                var_name = inspect_output(
+                    estimator = self.estimator,
+                    fit_method = self.fit_method,
+                    transform_method = self.transform_method)['transform']
+                output = self.output_wrapper(output, var_name = var_name)
+                warnings.warn(('{} output type is {} instead of {}.\noutput have been wrapped in dict with key {}'.format(self.name, type(output), 'dict', str(self.output_name['transform']))))
                 self.wrapped_output = True
             
             if self.takeoff_state_mode == 'data':
@@ -452,13 +460,15 @@ class Capsula():
         return {str(var_name):item}
 
     def bypass(self, pipe_call, node_call):
-        self.clear_landing_zone()
+        if self.clear_zones:
+            self.clear_landing_zone() 
         ### check if all inputs are in landing zone
         self.check_landing_zone(self.required_inputs[node_call])
         ### if not all required inputs are in landing zone, get it from previous nodes in graph
         if self.required_inputs_landed == False:
             for sender in self.input_nodes:
-                self.take(sender, pipe_call = pipe_call)
+                variables = self.required_inputs['transform'] + self.optional_inputs['transform']
+                self.take(sender = sender, variables = variables, pipe_call = pipe_call)
         ### check again
         lz_args = str(self.check_landing_zone(self.required_inputs[node_call], return_missing = True))
 
@@ -472,75 +482,92 @@ class Capsula():
         return inputs
 
 
-def check_flow(allowed, check_mode, inputs):
+# def check_flow(allowed, check_mode, inputs):
     
-    if not isinstance(allowed, list):
-        print('Allowed keys must be passed as a list. No checking performed.')
-        return inputs
+#     if not isinstance(allowed, list):
+#         print('Allowed keys must be passed as a list. No checking performed.')
+#         return inputs
 
-    if not isinstance(inputs, dict):
-        print('inputs must be dict. No checking performed.')
-        return inputs
+#     if not isinstance(inputs, dict):
+#         print('inputs must be dict. No checking performed.')
+#         return inputs
 
 
-    intersec = set(allowed).intersection(set(inputs))
-    missing = set(allowed) - intersec
-    extra = set(inputs) - intersec
+#     intersec = set(allowed).intersection(set(inputs))
+#     missing = set(allowed) - intersec
+#     extra = set(inputs) - intersec
 
-    if check_mode == 'filter':        
-        if (not missing) and (not (set(allowed) == set(inputs))):            
-            inputs = {input_name:value in input_name in allowed for input_name,value in inputs.items()}
-            return inputs        
-        elif set(allowed) == set(inputs):
-            return inputs
-        else:
-            raise AssertionError('in order to filter, input json must contain {}\n{} is missing'.format(set(allowed), missing))
+#     if check_mode == 'filter':        
+#         if (not missing) and (not (set(allowed) == set(inputs))):            
+#             inputs = {input_name:value in input_name in allowed for input_name,value in inputs.items()}
+#             return inputs        
+#         elif set(allowed) == set(inputs):
+#             return inputs
+#         else:
+#             raise AssertionError('in order to filter, input json must contain {}\n{} is missing'.format(set(allowed), missing))
     
-    elif check_mode == 'raise':
-        if not set(allowed) == set(inputs):
-            raise AssertionError('input json must contain exactly {} keys'.format(allowed))
+#     elif check_mode == 'raise':
+#         if not set(allowed) == set(inputs):
+#             raise AssertionError('input json must contain exactly {} keys'.format(allowed))
     
-    elif check_mode == 'ignore':
-        return inputs
+#     elif check_mode == 'ignore':
+#         return inputs
     
-    elif check_mode == 'warn':
-        warnings.warn("not allowed items passed: {} \nmissing items: {}".format(str(extra),str(missing)))
-        return inputs
+#     elif check_mode == 'warn':
+#         warnings.warn("not allowed items passed: {} \nmissing items: {}".format(str(extra),str(missing)))
+#         return inputs
 
-    else:        
-        raise ValueError('check_mode should be one of ["filter","raise","ignore", "warn"]')
+#     else:        
+#         raise ValueError('check_mode should be one of ["filter","raise","ignore", "warn"]')
 
 def get_output_json_keys(estimator,fit_method, transform_method):
     
     if estimator != None:
-        source_code = {}
-        json_str = {}
+        json_str = inspect_output(estimator = estimator, fit_method = fit_method, transform_method = transform_method)
         allowed_outputs = {}
-        if transform_method != '__call__':
-            source_code['fit'] = inspect.getsource(getattr(estimator, fit_method))
-            source_code['transform'] = inspect.getsource(getattr(estimator, transform_method))
-        else:
-            source_code['fit'] = inspect.getsource(estimator)
-            source_code['transform'] = inspect.getsource(estimator)
         
-        json_str['fit'] = source_code['fit'].split('return')[-1]
-        json_str['fit'] = json_str['fit'].replace(' ', '')
-        json_str['fit'] = json_str['fit'].replace("'", '"')
-
-        json_str['transform'] = source_code['transform'].split('return')[-1]
-        json_str['transform'] = json_str['transform'].replace(' ', '')
-        json_str['transform'] = json_str['transform'].replace("'", '"')
-        try:
+        if ('{' in json_str['fit']) and (':' in json_str['fit']):
             values = re.findall('"([^"]+?)"\s*:', json_str['fit'])
             allowed_outputs['fit'] = values
-        except:
-            allowed_outputs['fit'] = [json_str]
-        try:
+        else:
+            allowed_outputs['fit'] = [json_str['fit']]
+        
+        if ('{' in json_str['transform']) and (':' in json_str['transform']):
             values = re.findall('"([^"]+?)"\s*:', json_str['transform'])
             allowed_outputs['transform'] = values
-        except:
-            allowed_outputs['transform'] = [json_str]
+        else:
+            allowed_outputs['transform'] = [json_str['transform']]
     else:
         allowed_outputs = {}
 
     return allowed_outputs
+
+def multiple_split(string, substring):
+    for sub in substring:
+        if isinstance(string, str):
+            string = string.split(sub)
+        elif isinstance(string, list):
+            string = sum([st.split(sub) for st in string], [])
+    string = [i for i in string if i != '']
+    return string
+
+def inspect_output(estimator, fit_method, transform_method):
+    source_code = {}
+    json_str = {}
+    if transform_method != '__call__':
+        source_code['fit'] = inspect.getsource(getattr(estimator, fit_method))
+        source_code['transform'] = inspect.getsource(getattr(estimator, transform_method))
+    else:
+        source_code['fit'] = inspect.getsource(estimator)
+        source_code['transform'] = inspect.getsource(estimator)
+    
+    json_str['fit'] = source_code['fit'].split('return')[-1]
+    json_str['fit'] = json_str['fit'].replace(' ', '')
+    json_str['fit'] = json_str['fit'].replace("'", '"')
+    json_str['fit'] = json_str['fit'].replace("\n", '')
+
+    json_str['transform'] = source_code['transform'].split('return')[-1]
+    json_str['transform'] = json_str['transform'].replace(' ', '')
+    json_str['transform'] = json_str['transform'].replace("'", '"')
+    json_str['transform'] = json_str['transform'].replace("\n", '')
+    return json_str

@@ -33,14 +33,23 @@ class Custom():
         with open(saving_path, 'wb') as file:
             pickle.dump(self, file, **pickleargs)
 
-    def __init__(self, input_nodes, output_nodes):
+    def __init__(self, input_nodes, output_nodes, clear_zones = None):
         if not isinstance(input_nodes, list):
             raise TypeError('input_nodes must be list')
 
         if not isinstance(output_nodes, list):
             raise TypeError('output_nodes must be list')
-        assert all([isinstance(node, Capsula) for node in input_nodes+output_nodes])
+
+        for node in input_nodes+output_nodes:
+            if not isinstance(node, Capsula):
+                raise TypeError('{} should be an instance of Capsula').format(node.name)
+        
+        
+        self.clear_zones = clear_zones
         graph = self.build_graph(output_nodes)        
+        if clear_zones in [True,False]:
+            for node in graph:
+                setattr(node,'clear_zones',clear_zones)
         self.check_graph(graph,input_nodes, output_nodes)
         self.graph = graph
         
@@ -48,6 +57,7 @@ class Custom():
         self.input_nodes = input_nodes
         self.output_nodes = output_nodes
         self.creation_date = datetime.datetime.now()
+        
 
         
     

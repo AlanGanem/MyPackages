@@ -32,6 +32,10 @@ def model_to_dot(graph,
             mode = 'fit_only'
         elif node.transform_only:
             mode = 'transform_only'
+        if node.is_callable:
+            type_ = 'function'
+        else:
+            type_ = 'object'
         #create node_labels
         if isinstance(node, Inputer):
             required_input_labels = 'None'
@@ -41,18 +45,15 @@ def model_to_dot(graph,
             if not node.is_callable:
                 required_input_labels = node.required_inputs
                 optional_input_labels = node.optional_inputs
+                output_labels = node.allowed_outputs
             else:
                 required_input_labels = node.required_inputs['fit']
                 optional_input_labels = node.optional_inputs['fit']
-
-        if node.allowed_outputs:
-            output_labels = node.allowed_outputs
-        else:
-            output_labels = 'all'
+                output_labels = node.allowed_outputs['fit']
 
         if not isinstance(node, Inputer):
             label = "%s\n%s|{required_input:|optional_input:|output:}|{{%s}|{%s}|{%s}}" % (
-                label,
+                type_ +label,
                 mode,
                 required_input_labels,
                 optional_input_labels,

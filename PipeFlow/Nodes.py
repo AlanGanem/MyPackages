@@ -1,7 +1,11 @@
 from Base import Capsula
+from functools import partial
 import inspect
 
 class Node(Capsula):
+	'''
+	rename the capsula class in order to avoid calling from Base
+	'''
 	pass
 
 class Inputer(Capsula):
@@ -28,5 +32,21 @@ class Inputer(Capsula):
 		
 		return self.takeoff_zone
 
+class Renamer(Capsula):
+	'''
+	renames the output dict keys.
+	map renames from key to value
+	'''
+	def __init__(self,map, **nodeargs):
+		estimator = partial(self.renamer, map = map)
+		super().__init__(
+			estimator=estimator,
+			**nodeargs
+		)
 
-
+	def renamer(self,inputs,map ={}):
+		assert isinstance(map, dict)
+		for key in map:
+			inputs[map[key]] = inputs.pop(key)
+		outputs_dict = inputs
+		return outputs_dict
